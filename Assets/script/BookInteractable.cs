@@ -2,151 +2,198 @@ using System.Collections;
 using UnityEngine;
 using TMPro;
 using UnityEngine.InputSystem;
+using Unity.Cinemachine;
 using FlamexStudios.Player;
 
 namespace FlamexStudios.Exam
 {
     public class BookInteractable : MonoBehaviour
     {
-        [Header("Book Content")]
+        [Header("1. Book Identity & Lock Level")]
+        [Tooltip("Set 1 for Class 1, 2 for Class 2, up to 7")]
+        public int classNumber = 1;
         public ExamData bookExamData;
 
-        [Header("3D Book Mesh to Animate")]
+        [Header("2. Camera & 3D Book Mesh")]
+        [Tooltip("Your Cinemachine Camera positioned inside your Blur Box Volume")]
+        public CinemachineCamera bookCinemachineCam;
+        [Tooltip("Optional: The 3D Book FBX to lift when opening (Uncheck Static on it!)")]
         public Transform bookMeshTransform;
+        public float cameraBlendTime = 0.8f;
 
-        [Header("UI Prompt (Only Prompt Text is required!)")]
-        public GameObject interactPromptUI;
+        [Header("3. UI Prompt")]
         public TextMeshProUGUI promptText;
+        public float interactDistance = 2.0f;
 
-        private Vector3 originalWorldPos;
-        private Quaternion originalWorldRot;
+        private Vector3 originalBookPos;
+        private Quaternion originalBookRot;
         private bool isPlayerNear = false;
         private bool isReading = false;
+        private Collider triggerCollider;
 
         private void Start()
         {
-            if (bookMeshTransform == null) bookMeshTransform = transform;
-            originalWorldPos = bookMeshTransform.position;
-            originalWorldRot = bookMeshTransform.rotation;
-
-            // Auto-link Interact Prompt UI if only Prompt Text was assigned in the Inspector!
-            if (interactPromptUI == null && promptText != null)
+            if (bookMeshTransform != null)
             {
-                interactPromptUI = promptText.gameObject;
+                originalBookPos = bookMeshTransform.position;
+                originalBookRot = bookMeshTransform.rotation;
             }
-        }
 
-        private bool IsPlayerCollider(Collider other)
-        {
-            return other.CompareTag("Player") ||
-                   other.GetComponent<PlayerManager>() != null ||
-                   other.GetComponentInParent<PlayerManager>() != null;
-        }
+            triggerCollider = GetComponent<Collider>();
 
-        private void ForceEnableWithParents(GameObject target)
-        {
-            if (target == null) return;
-            Transform t = target.transform;
-            while (t != null)
-            {
-                if (!t.gameObject.activeSelf) t.gameObject.SetActive(true);
-                t = t.parent;
-            }
-        }
-
-        private void OnTriggerEnter(Collider other)
-        {
-            if (IsPlayerCollider(other) && !isReading && bookExamData != null)
-            {
-                isPlayerNear = true;
-                UpdatePrompt();
-
-                // Automatically wakes up Exam_Canvas and the prompt text!
-                if (interactPromptUI != null) ForceEnableWithParents(interactPromptUI);
-                Debug.Log($"[BookInteractable] Player entered book trigger: {bookExamData.examTitle}");
-            }
-        }
-
-        private void OnTriggerExit(Collider other)
-        {
-            if (IsPlayerCollider(other))
-            {
-                isPlayerNear = false;
-                if (interactPromptUI != null) interactPromptUI.SetActive(false);
-            }
-        }
-
-        private void UpdatePrompt()
-        {
-            if (promptText == null || bookExamData == null) return;
-            PlayerInput pi = PlayerManager.Instance != null ? PlayerManager.Instance.GetComponent<PlayerInput>() : null;
-            string key = (pi != null && pi.currentControlScheme == "Gamepad") ? "Y" : "E";
-            promptText.text = $"Press [{key}] to Read: {bookExamData.examTitle}";
+            // Keep book camera priority low until the player interacts
+            if (bookCinemachineCam != null)
+                bookCinemachineCam.Priority = 5;
         }
 
         private void Update()
         {
-            if (!isPlayerNear || isReading) return;
-            if (PlayerManager.Instance == null || PlayerManager.Instance.Input == null) return;
+            if (isReading || bookExamData == null || PlayerManager.Instance == null) return;
 
-            if (PlayerManager.Instance.Input.InteractTriggered)
+            // Check if player is inside the trigger box OR within interactDistance
+            Vector3 playerPos = PlayerManager.Instance.transform.position;
+            bool inTrigger = triggerCollider != null && triggerCollider.bounds.Contains(playerPos + Vector3.up * 0.5f);
+            bool inRange = Vector3.Distance(transform.position, playerPos) <= interactDistance;
+
+            bool nearNow = inTrigger || inRange;
+
+            if (nearNow && !isPlayerNear)
             {
-                PlayerManager.Instance.Input.ConsumeInteract();
-                StartCoroutine(PickUpBookSequence());
+                isPlayerNear = true;
+                ShowPrompt(true);
+            }
+            else if (!nearNow && isPlayerNear)
+            {
+                isPlayerNear = false;
+                ShowPrompt(false);
+            }
+
+            // Listen for Interact press (E / Gamepad Y)
+            if (isPlayerNear)
+            {
+                bool interactPressed = (PlayerManager.Instance.Input != null && PlayerManager.Instance.Input.InteractTriggered) ||
+                                       (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame);
+
+                if (interactPressed)
+                {
+                    if (PlayerManager.Instance.Input != null)
+                        PlayerManager.Instance.Input.ConsumeInteract();
+
+                    TryOpenBook();
+                }
             }
         }
 
-        private IEnumerator PickUpBookSequence()
+        private void TryOpenBook()
         {
-            isReading = true;
-            if (interactPromptUI != null) interactPromptUI.SetActive(false);
+            int unlockedLevel = CurriculumManager.Instance != null ? CurriculumManager.Instance.currentUnlockedTest : 1;
 
-            PlayerManager.Instance.Movement.enabled = false;
-
-            if (Camera.main != null && bookMeshTransform != null)
+            // Lock future books until earlier tests are passed!
+            if (classNumber > unlockedLevel)
             {
-                Transform camTransform = Camera.main.transform;
-                Vector3 targetPos = camTransform.position + (camTransform.forward * 0.45f) - (camTransform.up * 0.1f);
-                Quaternion targetRot = Quaternion.LookRotation(-camTransform.forward, camTransform.up);
+                if (CurriculumManager.Instance != null)
+                    CurriculumManager.Instance.TriggerAccessDenied();
 
-                float duration = 0.4f;
-                float elapsed = 0f;
-
-                while (elapsed < duration)
-                {
-                    elapsed += Time.deltaTime;
-                    float t = 1f - Mathf.Pow(1f - (elapsed / duration), 3f);
-
-                    bookMeshTransform.position = Vector3.Lerp(originalWorldPos, targetPos, t);
-                    bookMeshTransform.rotation = Quaternion.Slerp(originalWorldRot, targetRot, t);
-                    yield return null;
-                }
+                ShowPrompt(true); // Refreshes prompt to show locked message
+                return;
             }
 
-            if (bookMeshTransform != null && bookMeshTransform != transform)
-                bookMeshTransform.gameObject.SetActive(false);
+            StartCoroutine(OpenBookSequence());
+        }
 
-            if (LibraryBookUIManager.Instance != null)
+        private void ShowPrompt(bool show)
+        {
+            if (promptText == null) return;
+
+            if (show)
             {
-                LibraryBookUIManager.Instance.OpenBookUI(bookExamData, this);
+                int unlockedLevel = CurriculumManager.Instance != null ? CurriculumManager.Instance.currentUnlockedTest : 1;
+                PlayerInput pi = PlayerManager.Instance.GetComponent<PlayerInput>();
+                string key = (pi != null && pi.currentControlScheme == "Gamepad") ? "Y" : "E";
+
+                if (classNumber > unlockedLevel)
+                {
+                    promptText.text = $"[LOCKED - PASS TEST {classNumber - 1} FIRST] {bookExamData.examTitle}";
+                }
+                else
+                {
+                    promptText.text = $"Press [{key}] to Study: {bookExamData.examTitle}";
+                }
+
+                // Ensure Exam_Canvas and the prompt text object are active
+                Transform t = promptText.transform;
+                while (t != null)
+                {
+                    if (!t.gameObject.activeSelf) t.gameObject.SetActive(true);
+                    t = t.parent;
+                }
             }
             else
             {
-                Debug.LogError("[BookInteractable] LibraryBookUIManager.Instance is missing in the scene!");
+                promptText.gameObject.SetActive(false);
             }
         }
 
-        public void PutDownBook()
+        private IEnumerator OpenBookSequence()
+        {
+            isReading = true;
+            ShowPrompt(false);
+
+            // Lock movement & hide player body so it doesn't block the Book Camera
+            if (PlayerManager.Instance.Movement != null)
+                PlayerManager.Instance.Movement.enabled = false;
+            PlayerManager.Instance.SetMeshVisibility(false);
+
+            // Switch Cinemachine priority -> blends into your Book Camera & Blur Box Volume!
+            if (bookCinemachineCam != null)
+                bookCinemachineCam.Priority = 30;
+
+            // Optional 3D book lift during camera blend
+            if (bookMeshTransform != null && bookCinemachineCam != null)
+            {
+                Transform camT = bookCinemachineCam.transform;
+                Vector3 targetPos = camT.position + (camT.forward * 0.45f) - (camT.up * 0.08f);
+                Quaternion targetRot = Quaternion.LookRotation(-camT.forward, camT.up);
+
+                float elapsed = 0f;
+                while (elapsed < cameraBlendTime)
+                {
+                    elapsed += Time.deltaTime;
+                    float smoothT = 1f - Mathf.Pow(1f - Mathf.Clamp01(elapsed / cameraBlendTime), 3f);
+                    bookMeshTransform.position = Vector3.Lerp(originalBookPos, targetPos, smoothT);
+                    bookMeshTransform.rotation = Quaternion.Slerp(originalBookRot, targetRot, smoothT);
+                    yield return null;
+                }
+            }
+            else
+            {
+                yield return new WaitForSeconds(cameraBlendTime);
+            }
+
+            // Open the 2D Book UI on top of the blurred camera view
+            LibraryBookUIManager.Instance.OpenBookUI(bookExamData, this);
+        }
+
+        // Called automatically when pressing Escape inside LibraryBookUIManager
+        public void CloseAndPutDownBook()
         {
             if (bookMeshTransform != null)
             {
-                bookMeshTransform.position = originalWorldPos;
-                bookMeshTransform.rotation = originalWorldRot;
-                if (bookMeshTransform != transform)
-                    bookMeshTransform.gameObject.SetActive(true);
+                bookMeshTransform.position = originalBookPos;
+                bookMeshTransform.rotation = originalBookRot;
             }
 
-            PlayerManager.Instance.Movement.enabled = true;
+            // Drop priority back to 5 -> Cinemachine smoothly blends back to Player FreeLook Cam
+            if (bookCinemachineCam != null)
+                bookCinemachineCam.Priority = 5;
+
+            if (PlayerManager.Instance != null)
+            {
+                PlayerManager.Instance.SetMeshVisibility(true);
+                if (PlayerManager.Instance.Movement != null)
+                    PlayerManager.Instance.Movement.enabled = true;
+            }
+
             isReading = false;
         }
     }

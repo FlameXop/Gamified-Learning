@@ -41,8 +41,12 @@ namespace FlamexStudios.Exam
         public RectTransform tabletPanel;
         public CanvasGroup tabletCanvasGroup;
 
-        [Header("Chit Components")]
+        [Header("Chit Components & Animation")]
         public TMP_InputField chitInputField;
+        [Tooltip("Auto-grabbed from chitPanel if left empty")]
+        public RectTransform chitRectTransform;
+        [Tooltip("Auto-grabbed from chitPanel if left empty")]
+        public CanvasGroup chitCanvasGroup;
 
         [Header("Test UI Containers")]
         public GameObject mcqContainer;
@@ -66,6 +70,11 @@ namespace FlamexStudios.Exam
         private int currentQuestionIndex = 0;
         private int correctAnswersCount = 0;
 
+        // Coroutine Trackers
+        private Coroutine chitAnimCoroutine;
+        private Coroutine panelGlitchCoroutine;
+        private Coroutine textDecodeCoroutine;
+
         private const string GLITCH_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*<>[]/_";
 
         public bool IsChitOpen { get; private set; }
@@ -82,9 +91,38 @@ namespace FlamexStudios.Exam
 
             if (chitInputField != null) chitInputField.characterLimit = 500;
 
+            SetupChitReferences();
+
             IsChitOpen = false;
             if (chitPanel != null) chitPanel.SetActive(false);
             SetExamState(ExamState.Inactive);
+        }
+
+        private void SetupChitReferences()
+        {
+            if (chitPanel == null) return;
+
+            if (chitRectTransform == null)
+                chitRectTransform = chitPanel.GetComponent<RectTransform>();
+
+            if (chitCanvasGroup == null)
+            {
+                chitCanvasGroup = chitPanel.GetComponent<CanvasGroup>();
+                if (chitCanvasGroup == null)
+                    chitCanvasGroup = chitPanel.AddComponent<CanvasGroup>();
+            }
+        }
+
+        private void ForceEnableWithParents(GameObject target)
+        {
+            if (target == null) return;
+            Transform t = target.transform;
+            while (t != null)
+            {
+                if (!t.gameObject.activeSelf)
+                    t.gameObject.SetActive(true);
+                t = t.parent;
+            }
         }
 
         // ==========================================
@@ -93,7 +131,9 @@ namespace FlamexStudios.Exam
         public void SetExamState(ExamState newState)
         {
             currentState = newState;
-            StopAllCoroutines();
+
+            if (panelGlitchCoroutine != null) StopCoroutine(panelGlitchCoroutine);
+            if (textDecodeCoroutine != null) StopCoroutine(textDecodeCoroutine);
 
             switch (currentState)
             {
@@ -104,23 +144,22 @@ namespace FlamexStudios.Exam
                     break;
 
                 case ExamState.Transitioning:
-                    // Locks Chit and hides panels while camera sweeps to desk
-                    CloseChit();
+                    CloseChitImmediate();
                     if (welcomeScreenPanel != null) welcomeScreenPanel.SetActive(false);
                     if (mainTestPanel != null) mainTestPanel.SetActive(false);
                     break;
 
                 case ExamState.WelcomeScreen:
-                    CloseChit();
+                    CloseChitImmediate();
                     if (mainTestPanel != null) mainTestPanel.SetActive(false);
-                    if (welcomeScreenPanel != null) welcomeScreenPanel.SetActive(true);
+                    if (welcomeScreenPanel != null) ForceEnableWithParents(welcomeScreenPanel);
                     break;
 
                 case ExamState.InTest:
-                    CloseChit();
+                    CloseChitImmediate();
                     if (welcomeScreenPanel != null) welcomeScreenPanel.SetActive(false);
-                    if (mainTestPanel != null) mainTestPanel.SetActive(true);
-                    if (hudPanel != null) hudPanel.SetActive(true);
+                    if (mainTestPanel != null) ForceEnableWithParents(mainTestPanel);
+                    if (hudPanel != null) ForceEnableWithParents(hudPanel);
                     break;
             }
 
@@ -129,7 +168,9 @@ namespace FlamexStudios.Exam
 
         private void UpdateCursorState()
         {
-            if (currentState == ExamState.WelcomeScreen || currentState == ExamState.InTest || IsChitOpen)
+            bool isBookOpen = LibraryBookUIManager.Instance != null && LibraryBookUIManager.Instance.IsBookOpen;
+
+            if (currentState == ExamState.WelcomeScreen || currentState == ExamState.InTest || IsChitOpen || isBookOpen)
             {
                 Cursor.lockState = CursorLockMode.None;
                 Cursor.visible = true;
@@ -151,17 +192,15 @@ namespace FlamexStudios.Exam
             currentQuestionIndex = 0;
             correctAnswersCount = 0;
 
-            // Dynamically generate & shuffle up to 10 questions for this run
             GenerateDynamicQuestionSet();
-
             SetExamState(ExamState.WelcomeScreen);
 
             RectTransform welcomeRect = welcomeScreenPanel != null ? welcomeScreenPanel.GetComponent<RectTransform>() : null;
-            StartCoroutine(CyberpunkGlitchIn(welcomeRect, welcomeCanvasGroup, () =>
+            panelGlitchCoroutine = StartCoroutine(CyberpunkGlitchIn(welcomeRect, welcomeCanvasGroup, () =>
             {
                 if (welcomeTitleText != null && currentExamData != null)
                 {
-                    StartCoroutine(DecodeTextEffect(welcomeTitleText, currentExamData.examTitle, 0.35f));
+                    textDecodeCoroutine = StartCoroutine(DecodeTextEffect(welcomeTitleText, currentExamData.examTitle, 0.35f));
                 }
             }));
         }
@@ -173,7 +212,6 @@ namespace FlamexStudios.Exam
 
             List<Question> pool = new List<Question>(currentExamData.questions);
 
-            // 1. Shuffle the questions for this test run
             for (int i = pool.Count - 1; i > 0; i--)
             {
                 int r = Random.Range(0, i + 1);
@@ -184,7 +222,6 @@ namespace FlamexStudios.Exam
 
             int countToTake = Mathf.Min(maxQuestionsPerTest, pool.Count);
 
-            // 2. Auto-build 4 MCQ options for each selected question using answers from OTHER questions in the book!
             for (int i = 0; i < countToTake; i++)
             {
                 Question q = pool[i];
@@ -193,7 +230,6 @@ namespace FlamexStudios.Exam
                 {
                     List<string> options = new List<string> { q.correctTextAnswer };
 
-                    // Grab 3 random wrong answers (distractors) from the rest of the book
                     int safetyCounter = 0;
                     while (options.Count < 4 && safetyCounter < 100)
                     {
@@ -205,10 +241,8 @@ namespace FlamexStudios.Exam
                         }
                     }
 
-                    // Fallback if the book has fewer than 4 unique answers
                     while (options.Count < 4) options.Add($"Option {options.Count + 1}");
 
-                    // Shuffle the 4 MCQ options and record which button holds the right answer
                     for (int j = options.Count - 1; j > 0; j--)
                     {
                         int r = Random.Range(0, j + 1);
@@ -235,7 +269,7 @@ namespace FlamexStudios.Exam
             if (questionTextUI != null) questionTextUI.text = "";
             else if (welcomeTitleText != null) welcomeTitleText.text = "";
 
-            StartCoroutine(CyberpunkGlitchIn(tabletPanel, tabletCanvasGroup, () =>
+            panelGlitchCoroutine = StartCoroutine(CyberpunkGlitchIn(tabletPanel, tabletCanvasGroup, () =>
             {
                 LoadNextQuestion();
             }));
@@ -245,7 +279,6 @@ namespace FlamexStudios.Exam
         {
             float duration = 0.28f;
             float elapsed = 0f;
-            Vector2 finalPos = Vector2.zero;
 
             if (targetRect != null)
             {
@@ -263,10 +296,6 @@ namespace FlamexStudios.Exam
                     float scaleY = Mathf.Lerp(0.02f, 1f, Mathf.Pow(t, 0.4f));
                     float scaleX = (Random.value > 0.7f) ? Random.Range(0.96f, 1.06f) : 1f;
                     targetRect.localScale = new Vector3(scaleX, scaleY, 1f);
-
-                    float jitterX = (t < 0.8f) ? Random.Range(-12f, 12f) : 0f;
-                    float jitterY = (t < 0.8f) ? Random.Range(-3f, 3f) : 0f;
-                    targetRect.anchoredPosition = finalPos + new Vector2(jitterX, jitterY);
                 }
 
                 if (targetGroup != null)
@@ -281,7 +310,6 @@ namespace FlamexStudios.Exam
             if (targetRect != null)
             {
                 targetRect.localScale = Vector3.one;
-                targetRect.anchoredPosition = finalPos;
             }
             if (targetGroup != null) targetGroup.alpha = 1f;
 
@@ -335,7 +363,7 @@ namespace FlamexStudios.Exam
             TextMeshProUGUI activeQuestionText = (questionTextUI != null) ? questionTextUI : welcomeTitleText;
             if (activeQuestionText != null)
             {
-                StartCoroutine(DecodeTextEffect(activeQuestionText, q.questionText, 0.35f));
+                textDecodeCoroutine = StartCoroutine(DecodeTextEffect(activeQuestionText, q.questionText, 0.35f));
             }
 
             if (q.type == QuestionType.AudioSpelling)
@@ -407,15 +435,29 @@ namespace FlamexStudios.Exam
         }
 
         // ==========================================
-        // 5. CHIT SYSTEM LOGIC
+        // 5. CHIT SYSTEM LOGIC & INDEPENDENT ANIMATION
         // ==========================================
         private void ToggleChit()
         {
-            // Block Chit from opening during camera transitions or Welcome Screen
+            // Block Chit ONLY during camera sweep or Welcome Screen
             if (currentState == ExamState.Transitioning || currentState == ExamState.WelcomeScreen) return;
 
+            SetupChitReferences();
             IsChitOpen = !IsChitOpen;
-            if (chitPanel != null) chitPanel.SetActive(IsChitOpen);
+
+            if (chitAnimCoroutine != null)
+                StopCoroutine(chitAnimCoroutine);
+
+            if (chitPanel != null)
+            {
+                if (IsChitOpen)
+                {
+                    ForceEnableWithParents(chitPanel);
+                    chitPanel.transform.SetAsLastSibling();
+                }
+
+                chitAnimCoroutine = StartCoroutine(AnimateChitRoutine(IsChitOpen));
+            }
 
             if (IsChitOpen)
             {
@@ -442,9 +484,77 @@ namespace FlamexStudios.Exam
             UpdateCursorState();
         }
 
-        private void CloseChit()
+        private IEnumerator AnimateChitRoutine(bool opening)
         {
+            float duration = 0.22f;
+            float elapsed = 0f;
+
+            if (opening && chitPanel != null)
+            {
+                chitPanel.SetActive(true);
+            }
+
+            Vector3 startScale = opening ? new Vector3(0.75f, 0.75f, 1f) : Vector3.one;
+            Vector3 endScale = opening ? Vector3.one : new Vector3(0.75f, 0.75f, 1f);
+
+            float startAlpha = opening ? 0f : (chitCanvasGroup != null ? chitCanvasGroup.alpha : 1f);
+            float endAlpha = opening ? 1f : 0f;
+
+            float startTilt = opening ? -6f : 0f;
+            float endTilt = opening ? 0f : -6f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float smoothT = 1f - Mathf.Pow(1f - t, 3f);
+
+                if (chitRectTransform != null)
+                {
+                    chitRectTransform.localScale = Vector3.Lerp(startScale, endScale, smoothT);
+                    chitRectTransform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(startTilt, endTilt, smoothT));
+                }
+
+                if (chitCanvasGroup != null)
+                {
+                    chitCanvasGroup.alpha = Mathf.Lerp(startAlpha, endAlpha, smoothT);
+                }
+
+                yield return null;
+            }
+
+            if (chitRectTransform != null)
+            {
+                chitRectTransform.localScale = endScale;
+                chitRectTransform.localRotation = Quaternion.Euler(0f, 0f, endTilt);
+            }
+
+            if (chitCanvasGroup != null)
+                chitCanvasGroup.alpha = endAlpha;
+
+            if (!opening && chitPanel != null)
+            {
+                chitPanel.SetActive(false);
+            }
+        }
+
+        private void CloseChitImmediate()
+        {
+            if (chitAnimCoroutine != null)
+                StopCoroutine(chitAnimCoroutine);
+
             IsChitOpen = false;
+
+            if (chitRectTransform != null)
+            {
+                chitRectTransform.localScale = Vector3.one;
+                chitRectTransform.localRotation = Quaternion.identity;
+            }
+            if (chitCanvasGroup != null)
+            {
+                chitCanvasGroup.alpha = 1f;
+            }
+
             if (chitPanel != null) chitPanel.SetActive(false);
             if (PlayerManager.Instance != null && PlayerManager.Instance.Input != null)
             {
@@ -457,7 +567,7 @@ namespace FlamexStudios.Exam
         // ==========================================
         private void FinishExam()
         {
-            CloseChit();
+            CloseChitImmediate();
             SetExamState(ExamState.Inactive);
 
             float scorePercentage = (float)correctAnswersCount / runtimeQuestions.Count;
@@ -465,8 +575,15 @@ namespace FlamexStudios.Exam
             if (scorePercentage >= 0.5f)
             {
                 Debug.Log("Exam Passed!");
-                PlayerManager.Instance.SetMeshVisibility(true);
-                PlayerManager.Instance.Movement.enabled = true;
+                if (currentDesk != null)
+                {
+                    currentDesk.CompleteAndStandUp();
+                }
+                else
+                {
+                    PlayerManager.Instance.SetMeshVisibility(true);
+                    PlayerManager.Instance.Movement.enabled = true;
+                }
             }
             else
             {
@@ -474,7 +591,6 @@ namespace FlamexStudios.Exam
             }
         }
 
-        // Works globally! Ghost AI can call ExamUIManager.Instance.AddAwareness(amount) anytime
         public void AddAwareness(float amount)
         {
             CurrentAwareness = Mathf.Clamp(CurrentAwareness + amount, 0f, 100f);
@@ -492,7 +608,7 @@ namespace FlamexStudios.Exam
 
         private void TriggerDeathSequence(string reason)
         {
-            CloseChit();
+            CloseChitImmediate();
             SetExamState(ExamState.Inactive);
             Debug.Log("GHOST KILLS YOU: " + reason);
         }

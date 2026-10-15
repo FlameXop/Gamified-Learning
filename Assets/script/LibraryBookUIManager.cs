@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 using UnityEngine.InputSystem;
-using FlamexStudios.Player;
 
 namespace FlamexStudios.Exam
 {
@@ -11,29 +10,32 @@ namespace FlamexStudios.Exam
     {
         public static LibraryBookUIManager Instance { get; private set; }
 
+        [Header("All 7 Curriculum Books (Optional Reference List)")]
+        public List<BookInteractable> allLibraryBooks = new List<BookInteractable>();
+
         [Header("Book UI Panels")]
         public GameObject bookUIPanel;            // Drag BookPanel here
-        public RectTransform bookSpreadRect;      // Drag BookPanel or Book_Spread_Container here
-        public CanvasGroup bookCanvasGroup;       // Optional: CanvasGroup on BookPanel
+        public RectTransform bookSpreadRect;      // Drag Book_Spread_Container here
+        public CanvasGroup bookCanvasGroup;       // Optional CanvasGroup on BookPanel
 
         [Header("Left & Right Page Text")]
         public TextMeshProUGUI bookTitleText;     // Drag Book_Title_Text here
         public TextMeshProUGUI leftPageText;      // Drag Left_Page_Text here
         public TextMeshProUGUI rightPageText;     // Drag Right_Page_Text here
         public TextMeshProUGUI pageNumberText;    // Drag Page_Number_Text here
-        [Tooltip("How many study notes/words appear on a single page")]
         public int notesPerPage = 5;
 
         [Header("Audio")]
         public AudioSource bookAudioSource;
         public AudioClip bookOpenSFX;
         public AudioClip pageFlipSFX;
+        public AudioClip bookCloseSFX;
 
         public bool IsBookOpen { get; private set; }
 
         private ExamData currentBookData;
-        private BookInteractable current3DBook;
-        private int currentSpreadIndex = 0; // 0 = Pages 1-2, 1 = Pages 3-4, etc.
+        private BookInteractable currentActiveBook;
+        private int currentSpreadIndex = 0;
         private int totalSpreads = 1;
         private bool isTransitioning = false;
 
@@ -55,21 +57,29 @@ namespace FlamexStudios.Exam
         {
             if (!IsBookOpen) return;
 
-            // Allow closing the book with Escape (Keyboard) or East Button / B / Circle (Gamepad)
-            if ((Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) ||
-                (Gamepad.current != null && Gamepad.current.buttonEast.wasPressedThisFrame))
+            // Standard UX: Press ESC (or Controller East Button) to close the book and return
+            bool closePressed = (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) ||
+                                (Gamepad.current != null && Gamepad.current.buttonEast.wasPressedThisFrame);
+
+            if (closePressed)
             {
                 CloseBook();
             }
+
+            // Optional UX: Left/Right Arrow keys or A/D also turn pages alongside the UI buttons!
+            if (!isTransitioning && Keyboard.current != null)
+            {
+                if (Keyboard.current.rightArrowKey.wasPressedThisFrame || Keyboard.current.dKey.wasPressedThisFrame)
+                    NextPage();
+                else if (Keyboard.current.leftArrowKey.wasPressedThisFrame || Keyboard.current.aKey.wasPressedThisFrame)
+                    PreviousPage();
+            }
         }
 
-        // ==========================================
-        // 1. OPEN BOOK & INITIAL GLITCH POP
-        // ==========================================
-        public void OpenBookUI(ExamData bookData, BookInteractable bookObject)
+        public void OpenBookUI(ExamData bookData, BookInteractable bookTrigger)
         {
             currentBookData = bookData;
-            current3DBook = bookObject;
+            currentActiveBook = bookTrigger;
             currentSpreadIndex = 0;
             IsBookOpen = true;
 
@@ -77,9 +87,9 @@ namespace FlamexStudios.Exam
             totalSpreads = Mathf.Max(1, Mathf.CeilToInt((float)currentBookData.questions.Count / notesPerSpread));
 
             if (bookTitleText != null)
-                bookTitleText.text = currentBookData.examTitle;
+                bookTitleText.text = $"{currentBookData.examTitle}   [Press ESC to Close]";
 
-            // Ensure BookPanel and Exam_Canvas are active
+            // Ensure Exam_Canvas and BookPanel are active
             if (bookUIPanel != null)
             {
                 Transform t = bookUIPanel.transform;
@@ -88,6 +98,7 @@ namespace FlamexStudios.Exam
                     if (!t.gameObject.activeSelf) t.gameObject.SetActive(true);
                     t = t.parent;
                 }
+                bookUIPanel.SetActive(true);
             }
 
             Cursor.lockState = CursorLockMode.None;
@@ -103,24 +114,23 @@ namespace FlamexStudios.Exam
         private IEnumerator OpenBookPopRoutine()
         {
             isTransitioning = true;
-            float duration = 0.25f;
+            float duration = 0.22f;
             float elapsed = 0f;
 
             if (leftPageText != null) leftPageText.text = "";
             if (rightPageText != null) rightPageText.text = "";
 
             if (bookCanvasGroup != null) bookCanvasGroup.alpha = 0f;
-            if (bookSpreadRect != null) bookSpreadRect.localScale = new Vector3(0.8f, 0.8f, 1f);
+            if (bookSpreadRect != null) bookSpreadRect.localScale = new Vector3(0.85f, 0.85f, 1f);
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / duration;
-                float easeOut = 1f - Mathf.Pow(1f - t, 3f);
+                float easeOut = 1f - Mathf.Pow(1f - (elapsed / duration), 3f);
 
                 if (bookCanvasGroup != null) bookCanvasGroup.alpha = easeOut;
                 if (bookSpreadRect != null)
-                    bookSpreadRect.localScale = Vector3.Lerp(new Vector3(0.8f, 0.8f, 1f), Vector3.one, easeOut);
+                    bookSpreadRect.localScale = Vector3.Lerp(new Vector3(0.85f, 0.85f, 1f), Vector3.one, easeOut);
 
                 yield return null;
             }
@@ -128,30 +138,25 @@ namespace FlamexStudios.Exam
             if (bookCanvasGroup != null) bookCanvasGroup.alpha = 1f;
             if (bookSpreadRect != null) bookSpreadRect.localScale = Vector3.one;
 
-            // Glitch-pop the first two pages of text in!
             yield return StartCoroutine(GlitchPopSpreadText());
             isTransitioning = false;
         }
 
-        // ==========================================
-        // 2. NEXT / PREVIOUS PAGE (GLITCH POP TEXT)
-        // ==========================================
         public void NextPage()
         {
             if (isTransitioning || currentSpreadIndex >= totalSpreads - 1) return;
             currentSpreadIndex++;
-            ChangePageSpread();
+            if (bookAudioSource != null && pageFlipSFX != null)
+                bookAudioSource.PlayOneShot(pageFlipSFX);
+
+            StopAllCoroutines();
+            StartCoroutine(GlitchPopSpreadText());
         }
 
         public void PreviousPage()
         {
             if (isTransitioning || currentSpreadIndex <= 0) return;
             currentSpreadIndex--;
-            ChangePageSpread();
-        }
-
-        private void ChangePageSpread()
-        {
             if (bookAudioSource != null && pageFlipSFX != null)
                 bookAudioSource.PlayOneShot(pageFlipSFX);
 
@@ -169,15 +174,15 @@ namespace FlamexStudios.Exam
 
             if (pageNumberText != null)
             {
-                int leftPageNum = (currentSpreadIndex * 2) + 1;
-                int rightPageNum = leftPageNum + 1;
-                pageNumberText.text = $"Page {leftPageNum} - {rightPageNum} / {totalSpreads * 2}";
+                int leftNum = (currentSpreadIndex * 2) + 1;
+                int rightNum = leftNum + 1;
+                pageNumberText.text = $"Page {leftNum} - {rightNum} / {totalSpreads * 2}";
             }
 
             RectTransform leftRect = leftPageText != null ? leftPageText.rectTransform : null;
             RectTransform rightRect = rightPageText != null ? rightPageText.rectTransform : null;
 
-            float duration = 0.28f;
+            float duration = 0.25f;
             float elapsed = 0f;
 
             char[] leftBuffer = new char[targetLeft.Length];
@@ -187,32 +192,19 @@ namespace FlamexStudios.Exam
             {
                 elapsed += 0.02f;
                 float progress = Mathf.Clamp01(elapsed / duration);
-
-                // Pop scale + slight glitch jitter on the text boxes
-                float popScale = 1f + Mathf.Sin(progress * Mathf.PI) * 0.06f;
-                float jitterX = (progress < 0.7f) ? Random.Range(-4f, 4f) : 0f;
+                float popScale = 1f + Mathf.Sin(progress * Mathf.PI) * 0.05f;
 
                 if (leftRect != null) leftRect.localScale = new Vector3(popScale, popScale, 1f);
                 if (rightRect != null) rightRect.localScale = new Vector3(popScale, popScale, 1f);
 
-                if (bookSpreadRect != null)
-                    bookSpreadRect.localRotation = Quaternion.Euler(0f, 0f, jitterX * 0.15f);
-
-                // Scramble and decode Left & Right page text simultaneously
-                if (leftPageText != null)
-                    leftPageText.text = ScrambleText(targetLeft, leftBuffer, progress);
-
-                if (rightPageText != null)
-                    rightPageText.text = ScrambleText(targetRight, rightBuffer, progress);
+                if (leftPageText != null) leftPageText.text = ScrambleText(targetLeft, leftBuffer, progress);
+                if (rightPageText != null) rightPageText.text = ScrambleText(targetRight, rightBuffer, progress);
 
                 yield return new WaitForSeconds(0.02f);
             }
 
-            // Snap cleanly to final text and scale
             if (leftRect != null) leftRect.localScale = Vector3.one;
             if (rightRect != null) rightRect.localScale = Vector3.one;
-            if (bookSpreadRect != null) bookSpreadRect.localRotation = Quaternion.identity;
-
             if (leftPageText != null) leftPageText.text = targetLeft;
             if (rightPageText != null) rightPageText.text = targetRight;
 
@@ -222,22 +214,15 @@ namespace FlamexStudios.Exam
         private string ScrambleText(string finalText, char[] buffer, float progress)
         {
             int revealedCount = Mathf.FloorToInt(progress * finalText.Length);
-
             for (int i = 0; i < finalText.Length; i++)
             {
                 char c = finalText[i];
                 if (c == ' ' || c == '\n' || c == '\r' || c == '•')
-                {
                     buffer[i] = c;
-                }
                 else if (i < revealedCount)
-                {
                     buffer[i] = c;
-                }
                 else
-                {
                     buffer[i] = GLITCH_CHARS[Random.Range(0, GLITCH_CHARS.Length)];
-                }
             }
             return new string(buffer);
         }
@@ -251,6 +236,7 @@ namespace FlamexStudios.Exam
 
             for (int i = startIdx; i < startIdx + count && i < list.Count; i++)
             {
+                // Prints bookStudyNote if filled, otherwise prints the Question + Answer automatically
                 string entry = !string.IsNullOrEmpty(list[i].bookStudyNote)
                     ? list[i].bookStudyNote
                     : $"{list[i].questionText} -> {list[i].correctTextAnswer}";
@@ -260,23 +246,23 @@ namespace FlamexStudios.Exam
             return sb.ToString();
         }
 
-        // ==========================================
-        // 3. CLOSE BOOK
-        // ==========================================
         public void CloseBook()
         {
             if (!IsBookOpen) return;
             IsBookOpen = false;
             StopAllCoroutines();
 
+            if (bookAudioSource != null && bookCloseSFX != null)
+                bookAudioSource.PlayOneShot(bookCloseSFX);
+
             if (bookUIPanel != null) bookUIPanel.SetActive(false);
 
-            if (current3DBook != null)
+            if (currentActiveBook != null)
             {
-                current3DBook.PutDownBook();
+                currentActiveBook.CloseAndPutDownBook();
             }
 
-            if (ExamUIManager.Instance != null && !ExamUIManager.Instance.IsChitOpen)
+            if (ExamUIManager.Instance == null || !ExamUIManager.Instance.IsChitOpen)
             {
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible = false;
