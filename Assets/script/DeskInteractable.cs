@@ -1,13 +1,16 @@
 using UnityEngine;
 using Unity.Cinemachine;
-using TMPro; // Needed for text
-using UnityEngine.InputSystem; // Needed to check gamepad vs keyboard
+using TMPro;
+using UnityEngine.InputSystem;
+using System.Collections;
 
 namespace FlamexStudios.Exam
 {
     public class DeskInteractable : MonoBehaviour
     {
-        [Header("Exam Assignment")]
+        [Header("Exam Assignment & Lock ID")]
+        [Tooltip("Set 1 for Class 1, 2 for Class 2, up to 7")]
+        public int testNumber = 1;
         public ExamData deskExam;
         public bool isFrontRow = false;
 
@@ -17,18 +20,19 @@ namespace FlamexStudios.Exam
 
         [Header("UI Prompts")]
         public GameObject interactPromptUI;
-        public TextMeshProUGUI promptText; // ADD THIS: To change the actual letters
+        public TextMeshProUGUI promptText;
 
         private bool isPlayerNear = false;
         private bool isTakingTest = false;
+        private bool isCompleted = false;
 
         private void OnTriggerEnter(Collider other)
         {
-            if (other.CompareTag("Player"))
+            if (other.CompareTag("Player") && !isTakingTest)
             {
                 isPlayerNear = true;
-                UpdatePromptText(); // Check device before showing
-                interactPromptUI.SetActive(true);
+                UpdatePromptText();
+                if (interactPromptUI != null) interactPromptUI.SetActive(true);
             }
         }
 
@@ -37,7 +41,7 @@ namespace FlamexStudios.Exam
             if (other.CompareTag("Player"))
             {
                 isPlayerNear = false;
-                interactPromptUI.SetActive(false);
+                if (interactPromptUI != null) interactPromptUI.SetActive(false);
             }
         }
 
@@ -45,55 +49,85 @@ namespace FlamexStudios.Exam
         {
             if (promptText == null || deskExam == null) return;
 
-            // Get the PlayerInput component to see what device is active
-            PlayerInput playerInput = Player.PlayerManager.Instance.GetComponent<PlayerInput>();
+            int unlockedLevel = CurriculumManager.Instance != null ? CurriculumManager.Instance.currentUnlockedTest : 1;
 
-            // "Gamepad" and "KeyboardMouse" are the default scheme names in Unity's Input System.
-            // Check your Player Input Actions asset to confirm your exact scheme names!
-            if (playerInput.currentControlScheme == "Gamepad")
+            if (isCompleted || testNumber < unlockedLevel)
             {
-                promptText.text = "Press [Y] to start " + deskExam.examTitle;
+                promptText.text = $"[COMPLETED] {deskExam.examTitle}";
+                return;
             }
-            else
+
+            if (testNumber > unlockedLevel)
             {
-                promptText.text = "Press [E] to start " + deskExam.examTitle;
+                promptText.text = $"[LOCKED - COMPLETE CLASS {unlockedLevel} FIRST] {deskExam.examTitle}";
+                return;
             }
+
+            PlayerInput playerInput = Player.PlayerManager.Instance.GetComponent<PlayerInput>();
+            string keyName = (playerInput != null && playerInput.currentControlScheme == "Gamepad") ? "Y" : "E";
+            promptText.text = $"Press [{keyName}] to start {deskExam.examTitle}";
         }
 
         private void Update()
         {
-            // Update to use the New Input System boolean we made earlier
             if (isPlayerNear && !isTakingTest && Player.PlayerManager.Instance.Input.InteractTriggered)
             {
                 Player.PlayerManager.Instance.Input.ConsumeInteract();
-                StartExamSequence();
+                TryStartExam();
             }
+        }
+
+        private void TryStartExam()
+        {
+            int unlockedLevel = CurriculumManager.Instance != null ? CurriculumManager.Instance.currentUnlockedTest : 1;
+
+            // Block player if test is locked or already beaten!
+            if (isCompleted || testNumber != unlockedLevel)
+            {
+                if (CurriculumManager.Instance != null)
+                    CurriculumManager.Instance.TriggerAccessDenied();
+                return;
+            }
+
+            StartExamSequence();
         }
 
         private void StartExamSequence()
         {
             isTakingTest = true;
-            interactPromptUI.SetActive(false);
+            if (interactPromptUI != null) interactPromptUI.SetActive(false);
 
             Player.PlayerManager.Instance.Movement.enabled = false;
-            Player.PlayerManager.Instance.Animator.SetTrigger("SitDown");
-            // This is the line that actually pulls the trigger to hide the mesh!
             Player.PlayerManager.Instance.SetMeshVisibility(false);
+            Player.PlayerManager.Instance.Animator.SetTrigger("SitDown");
 
             deskFirstPersonCam.Priority = 20;
             playerFreeLookCam.Priority = 10;
 
-            // Start a Coroutine to wait for the camera blend to finish!
+            ExamUIManager.Instance.SetExamState(ExamState.Transitioning);
             StartCoroutine(WaitForCameraThenStart());
         }
 
-        private System.Collections.IEnumerator WaitForCameraThenStart()
+        private IEnumerator WaitForCameraThenStart()
         {
-            // Cinemachine default blend is usually 2 seconds. We wait 1.5s for a cinematic feel.
             yield return new WaitForSeconds(1.5f);
-
-            // NOW we trigger the Welcome Screen!
             ExamUIManager.Instance.TriggerWelcomeScreen(deskExam, this);
+        }
+
+        // Called by ExamUIManager when the player passes the test!
+        public void CompleteAndStandUp()
+        {
+            isCompleted = true;
+            isTakingTest = false;
+
+            deskFirstPersonCam.Priority = 10;
+            playerFreeLookCam.Priority = 20;
+
+            Player.PlayerManager.Instance.SetMeshVisibility(true);
+            Player.PlayerManager.Instance.Movement.enabled = true;
+
+            if (CurriculumManager.Instance != null)
+                CurriculumManager.Instance.OnExamPassed();
         }
     }
 }
