@@ -12,13 +12,74 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 02dfb89608fadd34d8e998e861f6f67c, type: 3}
   m_Name: class1
   m_EditorClassIdentifier: Assembly-CSharp::FlamexStudios.Exam.ExamData
-  requiredClassLevel: 1
+  classNumber: 1
   examTitle: Spelling Bee
-  timeLimitSeconds: 300
   questions:
-  - type: 1
-    questionText: Spell this -
-    spokenAudio: {fileID: 0}
-    correctTextAnswer: 
-    answers: []
-    correctAnswerIndex: 0
+  - type: 0
+    bookStudyNote: bronchiolitis
+    questionText: Spell this - bronchiolitis
+    correctTextAnswer: bronchiolitis
+    spokenAudio: {fileID: 8300000, guid: f57a7c1cd7f237a47b7ec8f4b26168cc, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: 'ladder
+
+'
+    questionText: Spell this - ladder
+    correctTextAnswer: ladder
+    spokenAudio: {fileID: 8300000, guid: cc6e4aa5c66812044a83d522fa7994b9, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: car
+    questionText: Spell this - car
+    correctTextAnswer: car
+    spokenAudio: {fileID: 8300000, guid: 6188757f4c888434c86ede69c844b4ea, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: automobile
+    questionText: Spell this - automobile
+    correctTextAnswer: automobile
+    spokenAudio: {fileID: 8300000, guid: 3d0b402e5cc796f41a86b5e5b457edb6, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: pseudopseudohypoparathyroidism
+    questionText: Spell this - pseudopseudohypoparathyroidism
+    correctTextAnswer: pseudopseudohypoparathyroidism
+    spokenAudio: {fileID: 8300000, guid: c226d56bd1df0a14aa36fdaf9b765793, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: alligator
+    questionText: Spell this - alligator
+    correctTextAnswer: alligator
+    spokenAudio: {fileID: 8300000, guid: d45de8ac7f58d124ea0278fd0dc7cc9f, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3
