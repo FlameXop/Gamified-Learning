@@ -105,3 +105,47 @@ MonoBehaviour:
     - Option 2
     - 
     runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: connoisseur
+    questionText: 'Spell this -  connoisseur '
+    correctTextAnswer: 'connoisseur '
+    spokenAudio: {fileID: 8300000, guid: e181077948d5279428dcb5ee8c192a91, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: chauffeur
+    questionText: 'Spell this -  chauffeur '
+    correctTextAnswer: 'chauffeur '
+    spokenAudio: {fileID: 8300000, guid: cad95623fedb3ad49a9dfba223fdf747, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: charismatic
+    questionText: 'Spell this -  charismatic '
+    correctTextAnswer: 'charismatic '
+    spokenAudio: {fileID: 8300000, guid: c73097a5f148a5d46a3429db9a26de7e, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: homosapien
+    questionText: 'Spell this - homosapien '
+    correctTextAnswer: 'homosapien '
+    spokenAudio: {fileID: 8300000, guid: b3c677be5385a264d94bdadcb5c14652, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3

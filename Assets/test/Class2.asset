@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 02dfb89608fadd34d8e998e861f6f67c, type: 3}
+  m_Name: Class2
+  m_EditorClassIdentifier: Assembly-CSharp::FlamexStudios.Exam.ExamData
+  classNumber: 1
+  examTitle: 'Class 2: Physics'
+  questions:
+  - type: 1
+    bookStudyNote: speed = distance/time
+    questionText: 'A car travels 100 metres in 5 seconds. What is its average speed?
+
+
+      A)
+      10 m/s
+
+      B) 20 m/s
+
+      C) 25 m/s
+
+      D) 50 m/s'
+    correctTextAnswer: 20 m/s
+    spokenAudio: {fileID: 0}
+    runtimeMcqOptions: []
+    runtimeCorrectButtonIndex: 0
