@@ -83,3 +83,25 @@ MonoBehaviour:
     - Option 2
     - 
     runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: dishwasher
+    questionText: Spell this - dishwasher
+    correctTextAnswer: dishwasher
+    spokenAudio: {fileID: 8300000, guid: 716fe415bd10d8f4ab176954f82b6075, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3
+  - type: 0
+    bookStudyNote: 'rhetorical '
+    questionText: 'Spell this -  rhetorical '
+    correctTextAnswer: 'rhetorical '
+    spokenAudio: {fileID: 8300000, guid: a083d5ac0d6068c4dbfce0a5db2afee7, type: 3}
+    runtimeMcqOptions:
+    - Option 4
+    - Option 3
+    - Option 2
+    - 
+    runtimeCorrectButtonIndex: 3

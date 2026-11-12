@@ -59,6 +59,13 @@ namespace FlamexStudios.Exam
 
         [Header("Dynamic Question Generation")]
         public int maxQuestionsPerTest = 10;
+        [Header("Exam Passed Visual & Audio Feedback")]
+        public GameObject examPassedPanel;               // Drag Exam_Passed_Panel here
+        public CanvasGroup examPassedCanvasGroup;        // Auto-grabbed if on Exam_Passed_Panel
+        public RectTransform checkmarkIconRect;          // Drag Checkmark_Icon here (pops in!)
+        public TextMeshProUGUI passedTitleText;          // Drag Passed_Title_Text here
+        public TextMeshProUGUI passedSubtitleText;       // Drag Passed_Subtitle_Text here
+        public AudioClip examPassedSFX;                  // Drag your pass/chime audio clip here
 
         // Internal Exam State
         private ExamData currentExamData;
@@ -92,6 +99,7 @@ namespace FlamexStudios.Exam
 
             IsChitOpen = false;
             if (chitPanel != null) chitPanel.SetActive(false);
+            if (examPassedPanel != null) examPassedPanel.SetActive(false);
 
             // Force BookPanel off at start if it wasn't being read
             if (LibraryBookUIManager.Instance != null && !LibraryBookUIManager.Instance.IsBookOpen && LibraryBookUIManager.Instance.bookUIPanel != null)
@@ -100,6 +108,7 @@ namespace FlamexStudios.Exam
             }
 
             SetExamState(ExamState.Inactive);
+            
         }
 
         private void SetupChitReferences()
@@ -560,6 +569,11 @@ namespace FlamexStudios.Exam
                     PlayerManager.Instance.SetMeshVisibility(true);
                     RefreshCursorAndMovement();
                 }
+
+                // Trigger the visual & audio pass celebration popup!
+                int percentInt = Mathf.RoundToInt(scorePercentage * 100f);
+                int nextClassNum = (currentExamData != null) ? currentExamData.classNumber + 1 : 2;
+                StartCoroutine(PlayExamPassedFeedback(percentInt, nextClassNum));
             }
             else
             {
@@ -567,6 +581,90 @@ namespace FlamexStudios.Exam
             }
         }
 
+        private IEnumerator PlayExamPassedFeedback(int scorePercent, int nextClassNumber)
+        {
+            // 1. Play Pass Audio Cue
+            if (examAudioSource != null && examPassedSFX != null)
+            {
+                examAudioSource.PlayOneShot(examPassedSFX);
+            }
+
+            if (examPassedPanel == null) yield break;
+
+            if (examPassedCanvasGroup == null)
+            {
+                examPassedCanvasGroup = examPassedPanel.GetComponent<CanvasGroup>();
+                if (examPassedCanvasGroup == null)
+                    examPassedCanvasGroup = examPassedPanel.AddComponent<CanvasGroup>();
+            }
+
+            // Ensure popup doesn't block mouse or movement while walking away
+            examPassedCanvasGroup.blocksRaycasts = false;
+            examPassedPanel.SetActive(true);
+            examPassedPanel.transform.SetAsLastSibling();
+
+            string titleStr = (currentExamData != null) ? $"✓ {currentExamData.examTitle.ToUpper()} PASSED!" : "✓ EXAM PASSED!";
+            string subStr = (nextClassNumber <= 7)
+                ? $"Score: {scorePercent}%  |  Class {nextClassNumber} Material Unlocked!"
+                : $"Score: {scorePercent}%  |  All Curriculum Exams Completed!";
+
+            if (passedTitleText != null) passedTitleText.text = "";
+            if (passedSubtitleText != null) passedSubtitleText.text = "";
+
+            // 2. Slide/Pop the Banner & Elastic Bounce the Checkbox Icon
+            RectTransform panelRect = examPassedPanel.GetComponent<RectTransform>();
+            float popDuration = 0.35f;
+            float elapsed = 0f;
+
+            if (checkmarkIconRect != null) checkmarkIconRect.localScale = Vector3.zero;
+
+            while (elapsed < popDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / popDuration);
+                float easeOut = 1f - Mathf.Pow(1f - t, 3f);
+
+                examPassedCanvasGroup.alpha = easeOut;
+
+                if (panelRect != null)
+                    panelRect.localScale = Vector3.Lerp(new Vector3(0.8f, 0.8f, 1f), Vector3.one, easeOut);
+
+                // Overshoot bounce for the Checkbox Icon (scales 0 -> 1.25 -> 1.0)
+                if (checkmarkIconRect != null)
+                {
+                    float bounce = Mathf.Sin(t * Mathf.PI * 0.85f) * 1.2f;
+                    checkmarkIconRect.localScale = new Vector3(bounce, bounce, 1f);
+                }
+
+                yield return null;
+            }
+
+            if (panelRect != null) panelRect.localScale = Vector3.one;
+            if (checkmarkIconRect != null) checkmarkIconRect.localScale = Vector3.one;
+            examPassedCanvasGroup.alpha = 1f;
+
+            // 3. Glitch-Decode the Pass Title and Next Class Subtitle
+            if (passedTitleText != null)
+                StartCoroutine(DecodeTextEffect(passedTitleText, titleStr, 0.25f));
+
+            if (passedSubtitleText != null)
+                yield return StartCoroutine(DecodeTextEffect(passedSubtitleText, subStr, 0.35f));
+
+            // 4. Hold on screen for 3 seconds while player stands up, then fade out smoothly
+            yield return new WaitForSeconds(3.0f);
+
+            float fadeDuration = 0.5f;
+            float fadeElapsed = 0f;
+            while (fadeElapsed < fadeDuration)
+            {
+                fadeElapsed += Time.deltaTime;
+                examPassedCanvasGroup.alpha = Mathf.Lerp(1f, 0f, fadeElapsed / fadeDuration);
+                yield return null;
+            }
+
+            examPassedCanvasGroup.alpha = 0f;
+            examPassedPanel.SetActive(false);
+        }
         public void AddAwareness(float amount)
         {
             CurrentAwareness = Mathf.Clamp(CurrentAwareness + amount, 0f, 100f);
