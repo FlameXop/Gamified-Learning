@@ -325,6 +325,7 @@ namespace FlamexStudios.Exam
 
             List<Question> pool = new List<Question>(currentExamData.questions);
 
+            // Shuffle the question order for this test run
             for (int i = pool.Count - 1; i > 0; i--)
             {
                 int r = Random.Range(0, i + 1);
@@ -337,39 +338,84 @@ namespace FlamexStudios.Exam
 
             for (int i = 0; i < countToTake; i++)
             {
-                Question q = pool[i];
+                runtimeQuestions.Add(pool[i]);
+            }
+        }
 
-                if (q.type == QuestionType.MultipleChoice)
+        public void LoadNextQuestion()
+        {
+            if (runtimeQuestions == null || runtimeQuestions.Count == 0)
+            {
+                Debug.LogError("[ExamUIManager] No questions found in ExamData!");
+                return;
+            }
+
+            if (currentQuestionIndex >= runtimeQuestions.Count)
+            {
+                FinishExam();
+                return;
+            }
+
+            Question q = runtimeQuestions[currentQuestionIndex];
+
+            TextMeshProUGUI activeQuestionText = (questionTextUI != null) ? questionTextUI : welcomeTitleText;
+            if (activeQuestionText != null)
+            {
+                activeQuestionText.gameObject.SetActive(true);
+                textDecodeCoroutine = StartCoroutine(DecodeTextEffect(activeQuestionText, q.questionText, 0.35f));
+            }
+
+            if (q.type == QuestionType.AudioSpelling)
+            {
+                if (mcqContainer != null) mcqContainer.SetActive(false);
+                if (spellingContainer != null) spellingContainer.SetActive(true);
+
+                if (spellingInputField != null)
                 {
-                    List<string> options = new List<string> { q.correctTextAnswer };
-
-                    int safetyCounter = 0;
-                    while (options.Count < 4 && safetyCounter < 100)
+                    spellingInputField.text = "";
+                    if (!IsChitOpen)
                     {
-                        safetyCounter++;
-                        string randomWrong = pool[Random.Range(0, pool.Count)].correctTextAnswer;
-                        if (!options.Contains(randomWrong) && !string.IsNullOrEmpty(randomWrong))
-                        {
-                            options.Add(randomWrong);
-                        }
+                        spellingInputField.Select();
+                        spellingInputField.ActivateInputField();
                     }
-
-                    while (options.Count < 4) options.Add($"Option {options.Count + 1}");
-
-                    for (int j = options.Count - 1; j > 0; j--)
-                    {
-                        int r = Random.Range(0, j + 1);
-                        string tempOpt = options[j];
-                        options[j] = options[r];
-                        options[r] = tempOpt;
-                    }
-
-                    q.runtimeMcqOptions = options.ToArray();
-                    q.runtimeCorrectButtonIndex = options.IndexOf(q.correctTextAnswer);
                 }
 
-                runtimeQuestions.Add(q);
+                if (q.spokenAudio != null && examAudioSource != null)
+                {
+                    examAudioSource.PlayOneShot(q.spokenAudio);
+                }
             }
+            else if (q.type == QuestionType.MultipleChoice)
+            {
+                if (spellingContainer != null) spellingContainer.SetActive(false);
+                if (mcqContainer != null) mcqContainer.SetActive(true);
+
+                // Display your 4 custom MCQ options directly on the 4 answer buttons
+                for (int i = 0; i < 4; i++)
+                {
+                    if (answerButtonTexts != null && i < answerButtonTexts.Length && answerButtonTexts[i] != null)
+                    {
+                        string optionText = (q.mcqOptions != null && i < q.mcqOptions.Length && !string.IsNullOrEmpty(q.mcqOptions[i]))
+                            ? q.mcqOptions[i]
+                            : $"[Missing Option {i}]";
+
+                        StartCoroutine(DecodeTextEffect(answerButtonTexts[i], optionText, 0.25f));
+                    }
+                }
+            }
+        }
+
+        public void SubmitAnswer(int buttonIndex)
+        {
+            Question q = runtimeQuestions[currentQuestionIndex];
+
+            if (buttonIndex == q.correctOptionIndex)
+                correctAnswersCount++;
+            else
+                AddAwareness(10f);
+
+            currentQuestionIndex++;
+            LoadNextQuestion();
         }
 
         // ==========================================
@@ -463,51 +509,7 @@ namespace FlamexStudios.Exam
         // ==========================================
         // 3. QUESTION HANDLING LOGIC
         // ==========================================
-        public void LoadNextQuestion()
-        {
-            if (currentQuestionIndex >= runtimeQuestions.Count)
-            {
-                FinishExam();
-                return;
-            }
-
-            Question q = runtimeQuestions[currentQuestionIndex];
-
-            TextMeshProUGUI activeQuestionText = (questionTextUI != null) ? questionTextUI : welcomeTitleText;
-            if (activeQuestionText != null)
-            {
-                textDecodeCoroutine = StartCoroutine(DecodeTextEffect(activeQuestionText, q.questionText, 0.35f));
-            }
-
-            if (q.type == QuestionType.AudioSpelling)
-            {
-                mcqContainer.SetActive(false);
-                spellingContainer.SetActive(true);
-                spellingInputField.text = "";
-
-                if (!IsChitOpen && spellingInputField != null)
-                {
-                    spellingInputField.Select();
-                    spellingInputField.ActivateInputField();
-                }
-
-                if (q.spokenAudio != null && examAudioSource != null)
-                {
-                    examAudioSource.PlayOneShot(q.spokenAudio);
-                }
-            }
-            else if (q.type == QuestionType.MultipleChoice)
-            {
-                spellingContainer.SetActive(false);
-                mcqContainer.SetActive(true);
-
-                for (int i = 0; i < 4; i++)
-                {
-                    StartCoroutine(DecodeTextEffect(answerButtonTexts[i], q.runtimeMcqOptions[i], 0.25f));
-                }
-            }
-        }
-
+      
         // ==========================================
         // 4. ANSWER SUBMISSIONS
         // ==========================================
@@ -526,19 +528,7 @@ namespace FlamexStudios.Exam
             LoadNextQuestion();
         }
 
-        public void SubmitAnswer(int buttonIndex)
-        {
-            Question q = runtimeQuestions[currentQuestionIndex];
-
-            if (buttonIndex == q.runtimeCorrectButtonIndex)
-                correctAnswersCount++;
-            else
-                AddAwareness(10f);
-
-            currentQuestionIndex++;
-            LoadNextQuestion();
-        }
-
+      
         public void ReplaySpellingAudio()
         {
             Question q = runtimeQuestions[currentQuestionIndex];

@@ -28,7 +28,11 @@ MonoBehaviour:
       C) 25 m/s
 
       D) 50 m/s'
-    correctTextAnswer: 20 m/s
+    mcqOptions:
+    - 30 m/s
+    - 20 m/s
+    - 15 m/s
+    - 10 m/s
+    correctOptionIndex: 1
+    correctTextAnswer: 
     spokenAudio: {fileID: 0}
-    runtimeMcqOptions: []
-    runtimeCorrectButtonIndex: 0

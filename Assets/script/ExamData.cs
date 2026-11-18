@@ -5,8 +5,8 @@ namespace FlamexStudios.Exam
 {
     public enum QuestionType
     {
-        AudioSpelling,   // Used for Class 1 (50 Words)
-        MultipleChoice   // Used for Classes 2-7 (Auto-generates 4 MCQ options!)
+        AudioSpelling,   // Used for Class 1 (Spelling Bee)
+        MultipleChoice   // Used for Classes 2-7 (4 Custom Options)
     }
 
     [System.Serializable]
@@ -16,23 +16,25 @@ namespace FlamexStudios.Exam
 
         [Header("1. What Appears in the Library Book")]
         [TextArea(2, 4)]
-        [Tooltip("Example: 'Mitochondria is the powerhouse of the cell.' or 'Word: Photosynthesis'")]
+        [Tooltip("Study material displayed on the Library Book pages")]
         public string bookStudyNote;
 
         [Header("2. What Appears on the Exam Tablet")]
         [TextArea(2, 3)]
         public string questionText;
 
-        [Header("3. The Single Correct Answer")]
-        [Tooltip("Used for BOTH Spelling Bee checking AND auto-building MCQ choices!")]
+        [Header("3A. Multiple Choice Settings (Classes 2-7)")]
+        [Tooltip("Type the 4 exact options to display on buttons A, B, C, and D")]
+        public string[] mcqOptions = new string[4];
+
+        [Range(0, 3)]
+        [Tooltip("0 = Button A, 1 = Button B, 2 = Button C, 3 = Button D")]
+        public int correctOptionIndex = 0;
+
+        [Header("3B. Spelling Bee Settings (Class 1 Only)")]
+        [Tooltip("Exact word the player must type for AudioSpelling questions")]
         public string correctTextAnswer;
-
-        [Header("Audio (Only for Class 1 Spelling Bee)")]
         public AudioClip spokenAudio;
-
-        // Auto-populated at runtime by ExamUIManager (No need to fill in Inspector!)
-        [HideInInspector] public string[] runtimeMcqOptions = new string[4];
-        [HideInInspector] public int runtimeCorrectButtonIndex;
     }
 
     [CreateAssetMenu(fileName = "NewExamData", menuName = "FlamexStudios/Exam Data")]
